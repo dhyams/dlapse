@@ -4,17 +4,40 @@ import remi.gui as gui
 import RPi.GPIO as GPIO
 import time
 import math
+import logging
+import sched
 
+# TODO: add motor direction checkbox
+# running the time lapse blocks the Gui (no disabled button)
+
+###############################################################
 # motor information
 motor_RPM = 15.0
 
 # pulley information
 pulley_pitch = 0.2 # in cm
 pulley_T = 36 # number of teeth
+##############################################################
 
+##############################################################
+# RPi pin configuration
 motor_pin = 6 
 motor_dir1 = 5
 motor_dir2 = 10 
+program_pins = [13,19,26]
+shutter_pin = 2 
+focus_pin = 4
+##############################################################
+
+##############################################################
+# other setup
+address = '192.168.1.7'
+port = 8081
+log_filename = '/var/log/dlapse.log'
+##############################################################
+
+
+
 
 def wait(duration):
    time.sleep(duration)
@@ -30,7 +53,11 @@ def motor_on():
 
 def motor_off():
    GPIO.output(motor_pin, GPIO.LOW)
-   
+  
+def take_picture():
+   GPIO.output(shutter_pin, GPIO.HIGH) 
+   wait(0.1)
+   GPIO.output(shutter_pin, GPIO.LOW) 
 
 def set_motor_direction(forward=True):
    if forward:
@@ -46,6 +73,17 @@ def setup_gpio():
    GPIO.setup(motor_pin, GPIO.OUT)
    GPIO.setup(motor_dir1, GPIO.OUT)
    GPIO.setup(motor_dir2, GPIO.OUT)
+   GPIO.setup(shutter_pin, GPIO.OUT)
+   GPIO.setup(focus_pin, GPIO.OUT)
+
+   for p in program_pins:
+      GPIO.setup(p, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+   GPIO.output(shutter_pin, GPIO.LOW)
+   GPIO.output(focus_pin, GPIO.LOW)
+   
+   motor_off()
+
 
 def cleanup_gpio():
    GPIO.cleanup()
@@ -148,6 +186,8 @@ class MyApp(remi.App):
      
         self.UpdateInfo() 
 
+        self.scheduler = sched.scheduler(time.time, time.sleep)
+
         # returning the root widget
         return main
 
@@ -158,28 +198,35 @@ class MyApp(remi.App):
 
         title.set_text('Starting Time Lapse.')  
 
-        print info
- 
         self.do_time_lapse(info.frames, info.dt,  info.motorpulse, info.forward)
 
     def do_time_lapse(self, frames, dt, pulselength, forward=True):
 
-        print "Frames = ", frames
-        print "Dt = ", dt
-        print "MotorPulse = ", pulselength
-        print "Forward = ", forward
+        self.bt_start.set_enabled(False)
+
+        logging.info("Starting Time Lapse")
+        logging.info("  Frames = %d"%frames)
+        logging.info("Dt = %lf"%dt)
+        logging.info("MotorPulse = %lf"%pulselength)
+        logging.info("Forward = %d"%forward)
 
         allowance = 0.1*dt # the camera shutter speed should always be less than this....
                            # because we don't have the user input it as info.
+
         self.take_picture() 
+        wait(allowance)
+
         for i in xrange(frames-1):
            motor_pulse(pulselength, forward)
            wait(dt-allowance)
            self.take_picture() 
            wait(allowance)
 
+        self.bt_start.set_enabled(True)
+
     def take_picture(self):
-        print "Click!"
+        logging.info("Click!")
+        take_picture()
              
 
     def OnLengthChanged(self, widget, newValue):
@@ -227,10 +274,15 @@ class MyApp(remi.App):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename=log_filename, level=logging.DEBUG)
+    logging.getLogger().addHandler(logging.StreamHandler())
+    formatter = logging.Formatter('%(asctime)s %(process)d %(levelname)s: %(message)s')
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
+    logging.info("Start.")
+    
     setup_gpio() 
-    motor_off()
     try:
-       remi.start(MyApp, address='192.168.1.7', port=8081, multiple_instance=False, enable_file_cache=True, update_interval=0.1, start_browser=False)
-
+       remi.start(MyApp, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=0.2, start_browser=False)
     finally:
        cleanup_gpio()
