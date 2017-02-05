@@ -6,6 +6,7 @@ import time
 import math
 import logging
 import sched
+import scipy.optimize
 
 # TODO: add motor direction checkbox
 # running the time lapse blocks the Gui (no disabled button)
@@ -15,6 +16,7 @@ import sched
 motor_RPM = 15.0
 
 # pulley information
+# not really relevant now, since a calibration curve is now used.
 pulley_pitch = 0.2 # in cm
 pulley_T = 36 # number of teeth
 ##############################################################
@@ -25,8 +27,8 @@ motor_pin = 6
 motor_dir1 = 5
 motor_dir2 = 10 
 program_pins = [13,19,26]
-shutter_pin = 2 
-focus_pin = 4
+shutter_pin = 4
+focus_pin = 2
 ##############################################################
 
 ##############################################################
@@ -66,6 +68,18 @@ def set_motor_direction(forward=True):
    else:
       GPIO.output(motor_dir1, GPIO.LOW)
       GPIO.output(motor_dir2, GPIO.HIGH)
+
+def calibration(p):
+   # heat capacity model
+   a=	2.27422194447785E+00
+   b=	1.42230347360781E+01
+   c=	-2.41086937157436E-03
+   d = a + b*p + c/p/p 
+   return d
+
+def opt_function(p, dd):
+   return calibration(p) - dd
+
    
 
 def setup_gpio():
@@ -91,26 +105,29 @@ def cleanup_gpio():
 
 
 class Info(object):
-   def __init__(self, tlen, framerate, cliplen, raildist):
+   def __init__(self, tlen, framerate, cliplen, raildist, reverse):
         tlen *= 60                     # convert time length from minutes to seconds
         self.tlen = tlen               # in seconds
         self.framerate = framerate     # count
         self.cliplen = cliplen         # in seconds
         self.raildist = raildist       # in cm
+        self.forward = not reverse
 
         self.frames = framerate*cliplen
         self.dt     = float(tlen)/float(self.frames-1) # in seconds
         self.dx     = float(raildist)/float(self.frames-1) # in cm
 
-        self.forward = True
-
-        d = self.dx
-        RPM = motor_RPM 
-        pitch = pulley_pitch # cm
-        T = pulley_T   # tooth count 
-        Dp = pitch*T/math.pi
-        Vr = Dp/2.0*RPM*(2.0*math.pi/60.0) 
-        self.motorpulse = d/Vr 
+        
+        if 0:
+          d = self.dx
+          RPM = motor_RPM 
+          pitch = pulley_pitch # cm
+          T = pulley_T   # tooth count 
+          Dp = pitch*T/math.pi
+          Vr = Dp/2.0*RPM*(2.0*math.pi/60.0) 
+          self.motorpulse = d/Vr 
+        else:
+          self.motorpulse = scipy.optimize.newton(opt_function, 0.15, args=(self.dx*10.0,))
 
    def __str__(self):
         s = "INFO:\n"
@@ -161,6 +178,20 @@ class MyApp(remi.App):
             main.append(sub1)
             return lbinfo
 
+        def make_checkbox(label, labelc, handler=None):
+            lb = gui.Label(label, width='50%', height=30, margin='10px')
+            cb = gui.CheckBoxLabel(labelc, False, width='50%', height=30, margin='10px')
+
+            sub1 = gui.HBox(width='100%', height=50)
+            sub1.style['position'] = 'relative'
+            sub1.append(lb)
+            sub1.append(cb)
+
+            if handler: cb.set_on_change_listener(handler)
+            
+            main.append(sub1)  
+            return cb
+
         title = gui.Label('Time Lapse Controller', width='80%', height=30)
         #title.style['margin'] = 'auto'
         main.append(title)
@@ -169,6 +200,7 @@ class MyApp(remi.App):
         self.sp_raildist  = make_spinbox('Distance Along Rail (cm)', val=95, min=10, max=95, handler=self.OnRailDistanceChanged)
         self.sp_framerate = make_spinbox('Clip Frame Rate', val=30, min=10, max=120, handler=self.OnClipFrameRateChanged)
         self.sp_cliplen   = make_spinbox('Clip Duration', val=6, min=1, max=30, handler=self.OnClipLengthChanged)
+        self.cb_motorreverse = make_checkbox('Motor Direction', 'Right-to-Left', handler=self.OnMotorDirChanged)
 
         self.info_interval  = make_infoshow('Time Between Shots')
         self.info_shotcount = make_infoshow('Number of Shots')
@@ -232,6 +264,9 @@ class MyApp(remi.App):
     def OnLengthChanged(self, widget, newValue):
         self.UpdateInfo()
 
+    def OnMotorDirChanged(self, widget, newValue):
+        self.UpdateInfo()
+
     def OnClipFrameRateChanged(self, widget, newValue):
         self.UpdateInfo()
 
@@ -249,8 +284,9 @@ class MyApp(remi.App):
         framerate = int(self.sp_framerate.get_value())  # count
         cliplen = int(self.sp_cliplen.get_value())    # in seconds
         raildist = int(self.sp_raildist.get_value())  # in cm
+        reverse = bool(self.cb_motorreverse.get_value())
 
-        info = Info(tlen, framerate, cliplen, raildist)
+        info = Info(tlen, framerate, cliplen, raildist, reverse)
 
         return info
      
@@ -283,6 +319,6 @@ if __name__ == "__main__":
     
     setup_gpio() 
     try:
-       remi.start(MyApp, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=0.2, start_browser=False)
+       remi.start(MyApp, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=1.0, start_browser=False)
     finally:
        cleanup_gpio()
