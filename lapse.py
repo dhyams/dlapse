@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import os, sys
 import remi
 import remi.gui as gui
 import RPi.GPIO as GPIO
@@ -8,15 +9,13 @@ import logging
 import sched
 import scipy.optimize
 
-# TODO: add motor direction checkbox
 # running the time lapse blocks the Gui (no disabled button)
 
 ###############################################################
+# not really relevant now, since a calibration curve is now used.
 # motor information
 motor_RPM = 15.0
-
 # pulley information
-# not really relevant now, since a calibration curve is now used.
 pulley_pitch = 0.2 # in cm
 pulley_T = 36 # number of teeth
 ##############################################################
@@ -80,7 +79,18 @@ def calibration(p):
 def opt_function(p, dd):
    return calibration(p) - dd
 
-   
+  
+def low_power():
+   # saves 25-30 mA 
+   cmd = "/usr/bin/tvservice -o"
+   os.system(cmd)
+
+   # saves ~5mA
+   cmd = "echo none | tee /sys/class/leds/led0/trigger"
+   os.system(cmd)
+
+   cmd = "echo 1 | tee /sys/class/leds/led0/brightness"
+   os.system(cmd)
 
 def setup_gpio():
    GPIO.setmode(GPIO.BCM)
@@ -318,6 +328,7 @@ if __name__ == "__main__":
     logging.info("Start.")
     
     setup_gpio() 
+    low_power()
     try:
        remi.start(MyApp, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=1.0, start_browser=False)
     finally:
