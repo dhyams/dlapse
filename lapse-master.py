@@ -38,7 +38,7 @@ def wait(duration):
    time.sleep(duration)
 
 def motor_pulse(duration, forward=True):
-   logging.info("Motor pulse %d, forward=%d"%(duration, int(forward))
+   logging.info("Motor pulse %d, forward=%d"%(duration, int(forward)))
    set_motor_direction(forward)
    motor_on()
    wait(duration)
@@ -152,7 +152,8 @@ if __name__ == "__main__":
           logging.info("Running GUI.")
           # TODO: must wait until the network is up!!!
           os.system("pkill lapse-gui")
-          subprocess.Popen(["python","lapse-gui.py"])
+          lapse_gui_file = os.path.realpath(__file__).replace("master","gui")
+          subprocess.Popen(["python", lapse_gui_file])
           logging.info("Finishing spawning GUI.")
           logging.info("Listening for commands from the GUI.")  
           context = zmq.Context()
