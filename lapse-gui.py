@@ -6,24 +6,35 @@ import remi.gui as gui
 import time
 import logging
 from info import Info
+from threading import Timer
+import threading
 
 
 
 
 ##############################################################
 address = '192.168.1.7'
-port = 8081
+port = 80
 log_filename = '/var/log/dlapse.log'
 ##############################################################
 
 
+class MyTimer(threading.Thread):
+    def __init__(self, event, delay, callback):
+        threading.Thread.__init__(self)
+        self.delay = delay
+        self.stopped = event
+        self.callback = callback
+
+    def run(self):
+        while not self.stopped.wait(self.delay):
+            self.callback()
 
 
 
-
-class MyApp(remi.App):
+class TimeLapse(remi.App):
     def __init__(self, *args):
-        super(MyApp, self).__init__(*args)
+        super(TimeLapse, self).__init__(*args)
 
     def main(self, name='world'):
         main = gui.Widget(width='100%', height=600, margin='0px auto') #margin 0px auto allows to center the app to the screen
@@ -74,6 +85,7 @@ class MyApp(remi.App):
         #title.style['margin'] = 'auto'
         main.append(title)
 
+        self.info_status  = make_infoshow('Status')
         self.sp_length    = make_spinbox('Time Length (min)', val=20, min=2, max=120, handler=self.OnLengthChanged)
         self.sp_raildist  = make_spinbox('Distance Along Rail (cm)', val=95, min=10, max=95, handler=self.OnRailDistanceChanged)
         self.sp_framerate = make_spinbox('Clip Frame Rate', val=30, min=10, max=120, handler=self.OnClipFrameRateChanged)
@@ -92,11 +104,14 @@ class MyApp(remi.App):
         self.bt_start.set_on_click_listener(self.on_start, title)
         main.append(self.bt_start)
 
-        # TODO: add widgets that show the status of a shoot during the shoot.  Time left, shots taken, dist down rail, etc.
-     
+        # cancel button
+        self.bt_cancel = gui.Button('Cancel', width='100%', height=30, margin='10px')
+        self.bt_cancel.set_on_click_listener(self.on_cancel, title)
+        main.append(self.bt_cancel)
+
+        self.enable_gui()
         self.UpdateInfo() 
 
-        #self.scheduler = sched.scheduler(time.time, time.sleep)
 
         # returning the root widget
         return main
@@ -108,15 +123,56 @@ class MyApp(remi.App):
 
         title.set_text('Starting Time Lapse.')  
 
-        self.bt_start.set_enabled(False)
+        self.enable_gui(False)
 
-        socket.send("start lapse")
-
+        socket.send("start")
         socket.send_pyobj(info)
 
-        # after this, we should go into "listen" mode....and pick up messages from the server.  Because
-        # the server can't progress without us listening, in the PAIR setup.
+    def enable_gui(self, enabled=True):
+       
+        self.bt_start.set_enabled(enabled)
+        self.bt_cancel.set_enabled(not enabled)
+        self.sp_length.set_enabled(enabled)
+        self.sp_raildist.set_enabled(enabled)
+        self.sp_framerate.set_enabled(enabled)
+        self.sp_cliplen.set_enabled(enabled)
+        self.cb_motorreverse.set_enabled(enabled)
+       
+        if enabled:
+           self.info_status.set_text("Waiting for input.")
 
+           if hasattr(self,'stopFlag'): 
+              self.stopFlag.set()
+              del self.stopFlag
+        
+        else:
+           self.info_status.set_text("Waiting for communication from master.")
+
+           self.stopFlag = threading.Event()
+           self.timer = MyTimer(self.stopFlag, 2, self.on_timer)
+           self.timer.daemon = True
+           self.timer.start()  
+         
+
+    def on_cancel(self, widget, title):
+        logging.info("Cancel clicked.")
+        socket.send("cancel") 
+        
+    def on_timer(self):
+        msg = ''
+        try:
+            while True:
+                msg = socket.recv(flags=zmq.NOBLOCK) 
+                if msg == "finished": 
+                   self.enable_gui(True)
+                   break
+        except zmq.Again:
+            if msg: 
+               self.info_status.set_text(msg)
+        except:
+            import traceback
+            logging.info(traceback.format_exc())
+               
 
     def OnLengthChanged(self, widget, newValue):
         self.UpdateInfo()
@@ -180,7 +236,11 @@ if __name__ == "__main__":
     socket = context.socket(zmq.PAIR)
     socket.connect("tcp://localhost:5556")
 
+    #global sub
+    #sub = context.socket(zmq.SUB)
+    #sub.connect("tcp://localhost:5557")
+
     try:
-       remi.start(MyApp, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=1.0, start_browser=False)
+       remi.start(TimeLapse, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=1.0, start_browser=False)
     finally:
        pass
