@@ -168,9 +168,16 @@ def check_jumpers():
     for s in states:
        logging.info("Program pin state: %s"%str(s))
 
-    # TODO: set up the programs
     if states[0] or states[1] or states[2]:
-       info = Info(tlen=15.0, framerate=30, cliplen=8.0, raildist=75.0, reverse=False)
+       raildist = 100.0 if not states[2] else 200.0
+       tlen = 60.0
+       if states[0] and not states[1]:
+         tlen = 20.0
+       elif not states[0] and states[1]:
+         tlen = 30.0
+       elif states[0] and states[1]:
+         tlen = 45.0
+       info = Info(tlen=tlen, framerate=30, cliplen=8.0, raildist=raildist, reverse=False)
 
        do_time_lapse(info.frames, info.dt,  info.motorpulse, info.forward) 
        return True
