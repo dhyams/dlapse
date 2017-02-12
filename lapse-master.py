@@ -34,7 +34,12 @@ focus_pin = 2
 ##############################################################
 
 
+##############################################################
+# other setup
 log_filename="/var/log/dlapse-master.log"
+##############################################################
+
+
 
 def wait(duration):
    time.sleep(duration)
@@ -55,22 +60,20 @@ def motor_off():
    GPIO.output(motor_pin, GPIO.LOW)
   
 def take_picture():
-   logging.info("Taking picture.")
-   GPIO.output(shutter_pin, GPIO.HIGH) 
-   wait(0.2)
-   GPIO.output(shutter_pin, GPIO.LOW) 
+   try:
+      logging.info("Taking picture.")
+      GPIO.output(shutter_pin, GPIO.HIGH) 
+      wait(0.2)
+   finally:
+      GPIO.output(shutter_pin, GPIO.LOW) 
 
 def set_motor_direction(forward=True):
-   if forward:
-      GPIO.output(motor_dir1, GPIO.HIGH)
-      GPIO.output(motor_dir2, GPIO.LOW)
-   else:
-      GPIO.output(motor_dir1, GPIO.LOW)
-      GPIO.output(motor_dir2, GPIO.HIGH)
+   GPIO.output(motor_dir1, GPIO.HIGH if forward else GPIO.LOW)
+   GPIO.output(motor_dir2, GPIO.LOW  if forward else GPIO.HIGH)
 
   
 def low_power():
-   # saves 25-30 mA 
+   # saves 25-30 mA; turn HDMI circuitry off.
    cmd = "/usr/bin/tvservice -o"
    os.system(cmd)
 
@@ -80,6 +83,7 @@ def low_power():
 
    cmd = "echo 1 | tee /sys/class/leds/led0/brightness"
    os.system(cmd)
+
 
 def setup_gpio():
    GPIO.setmode(GPIO.BCM)
@@ -103,8 +107,7 @@ def cleanup_gpio():
 
 
 
-def do_time_lapse(frames, dt, dx, pulselength, forward=True, pub=None, commands=None):
-
+def do_time_lapse(frames, dt, dx, pulselength, forward=True, socket=None):
 
     logging.info("Starting Time Lapse")
     logging.info("  Frames = %d"%frames)
@@ -116,28 +119,30 @@ def do_time_lapse(frames, dt, dx, pulselength, forward=True, pub=None, commands=
     allowance = 0.1*dt # the camera shutter speed should always be less than this....
                        # because we don't have the user input it as info.
 
-    take_picture() 
-    wait(allowance)
-
     DX = 0.0
-    for i in xrange(frames-1):
-
-       if commands: 
-          msg = "Running: frame %d of %d, total movement %.0f mm"%(i+2, frames, DX)
-          commands.send(msg)
-
-       motor_pulse(pulselength, forward)
+    for i in xrange(frames):
+  
+       if socket: 
+          msg = "Running: frame %d/%d, total movement %.1f mm"%(i+1, frames, DX)
+          socket.send(msg)
 
        DX += dx*10.0 # keep track of total movement in mm.
 
-       wait(dt-allowance)
-       take_picture() 
-       wait(allowance)
+       if i == 0: # the first picture is special; no movement needed for this one.
+          take_picture()
+          wait(allowance)
+       else: 
+          motor_pulse(pulselength, forward)
+
+          wait(dt-allowance)
+          take_picture() 
+          wait(allowance)
+
  
        # see if we have received a cancel, and if so, break out.
-       if commands: 
+       if socket: 
            try:
-              msg = commands.recv(flags=zmq.NOBLOCK) # this is a nonblocking receive.
+              msg = socket.recv(flags=zmq.NOBLOCK) # this is a nonblocking receive.
               if msg == "cancel":
                  logging.info("Master received a cancel from GUI")
                  break
@@ -145,26 +150,25 @@ def do_time_lapse(frames, dt, dx, pulselength, forward=True, pub=None, commands=
               pass
        
 
-    # maybe it would be more reliable to send this on the commands socket?
     logging.info("Time lapse finished.")
-    if commands: commands.send("finished")
+    if socket: socket.send("finished")
 
 
 def check_jumpers():
     states = [GPIO.input(p) for p in program_pins]
     for s in states:
-       logging.info("State: %s"%str(s))
+       logging.info("Program pin state: %s"%str(s))
 
+    # TODO: set up the programs
     if states[0] or states[1] or states[2]:
-       info = Info(tlen=15.0, framerate=24, cliplen=6.0, raildist=50.0, reverse=False)
+       info = Info(tlen=15.0, framerate=30, cliplen=8.0, raildist=75.0, reverse=False)
+
        do_time_lapse(info.frames, info.dt,  info.motorpulse, info.forward) 
        return True
     
     return False
 
-
-
-if __name__ == "__main__":
+def setup_logging():
     logging.basicConfig(filename=log_filename, level=logging.DEBUG)
     logging.getLogger().addHandler(logging.StreamHandler())
     formatter = logging.Formatter('%(asctime)s %(process)d %(levelname)s: %(message)s')
@@ -172,9 +176,11 @@ if __name__ == "__main__":
         handler.setFormatter(formatter)
     logging.info("Start.")
 
-     
-    
+
+if __name__ == "__main__":
+    setup_logging() 
     setup_gpio() 
+
     try:
        low_power()
        if not check_jumpers():
@@ -183,29 +189,25 @@ if __name__ == "__main__":
           os.system("pkill lapse-gui") # doesn't work.
           lapse_gui_file = os.path.realpath(__file__).replace("master","gui")
           subprocess.Popen(["python", lapse_gui_file])
+
           logging.info("Finishing spawning GUI.")
           logging.info("Listening for commands from the GUI.")  
 
-          # this socket takes commands from the GUI.  We recognise two commands: "start", and "cancel".
-          # if we receive a "start" message, we expect to receive an Info object in the next message.
           context = zmq.Context()
-          commands = context.socket(zmq.PAIR)
-          commands.bind("tcp://*:5556")
-
-          # this socket is so that the GUI can get feedback on the current state of the time lapse.
-          pub=None
-          #pub = context.socket(zmq.PUB)
-          #pub.bind("tcp://*:5557") 
+          socket = context.socket(zmq.PAIR)
+          socket.bind("tcp://*:5556")
 
           while True:
-              msg = commands.recv() # this is a blocking receive.
+              msg = socket.recv() # this is a blocking receive.
+
               if msg == "start":
                  logging.info("GUI has told us to start.")
-                 info = commands.recv_pyobj()
-                 do_time_lapse(info.frames, info.dt, info.dx, info.motorpulse, info.forward, pub, commands) 
+                 info = socket.recv_pyobj()
+                 do_time_lapse(info.frames, info.dt, info.dx, info.motorpulse, info.forward, socket) 
+
               if msg == "rewind":
                  logging.info("GUI has told us to rewind.")
-                 info = commands.recv_pyobj()
+                 info = socket.recv_pyobj()
                  motor_pulse(info.rewind, not info.forward)
 
             

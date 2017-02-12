@@ -85,11 +85,11 @@ class TimeLapse(remi.App):
         main.append(title)
 
         self.info_status  = make_infoshow('Status')
-        self.sp_length    = make_spinbox('Time Length (min)', val=20, min=2, max=120, handler=self.OnLengthChanged)
-        self.sp_raildist  = make_spinbox('Distance Along Rail (cm)', val=95, min=10, max=95, handler=self.OnRailDistanceChanged)
-        self.sp_framerate = make_spinbox('Clip Frame Rate', val=30, min=10, max=120, handler=self.OnClipFrameRateChanged)
-        self.sp_cliplen   = make_spinbox('Clip Duration', val=6, min=1, max=30, handler=self.OnClipLengthChanged)
-        self.cb_motorreverse = make_checkbox('Motor Direction', 'Right-to-Left', handler=self.OnMotorDirChanged)
+        self.sp_length    = make_spinbox('Time Length (min)', val=20, min=2, max=120, handler=self.OnInfoChanged)
+        self.sp_raildist  = make_spinbox('Distance Along Rail (cm)', val=95, min=10, max=95, handler=self.OnInfoChanged)
+        self.sp_framerate = make_spinbox('Clip Frame Rate', val=30, min=10, max=120, handler=self.OnInfoChanged)
+        self.sp_cliplen   = make_spinbox('Clip Duration', val=6, min=1, max=30, handler=self.OnInfoChanged)
+        self.cb_motorreverse = make_checkbox('Motor Direction', 'Right-to-Left', handler=self.OnInfoChanged)
 
         self.info_interval  = make_infoshow('Time Between Shots')
         self.info_shotcount = make_infoshow('Number of Shots')
@@ -166,7 +166,7 @@ class TimeLapse(remi.App):
         socket.send("cancel") 
 
     def on_rewind(self, widget, title):
-        # pop a dialog to ask user how long to rewind.
+        # TODO: pop a dialog to ask user how long to rewind.
 
         info = self.GetInfo()
 
@@ -191,19 +191,7 @@ class TimeLapse(remi.App):
             logging.info(traceback.format_exc())
                
 
-    def OnLengthChanged(self, widget, newValue):
-        self.UpdateInfo()
-
-    def OnMotorDirChanged(self, widget, newValue):
-        self.UpdateInfo()
-
-    def OnClipFrameRateChanged(self, widget, newValue):
-        self.UpdateInfo()
-
-    def OnClipLengthChanged(self, widget, newValue):
-        self.UpdateInfo()
-
-    def OnRailDistanceChanged(self, widget, newValue):
+    def OnInfoChanged(self, widget, newValue):
         self.UpdateInfo()
 
     def GetInfo(self):
