@@ -40,11 +40,13 @@ def wait(duration):
    time.sleep(duration)
 
 def motor_pulse(duration, forward=True):
-   logging.info("Motor pulse %d, forward=%d"%(duration, int(forward)))
-   set_motor_direction(forward)
-   motor_on()
-   wait(duration)
-   motor_off()
+   try:
+      logging.info("Motor pulse %d, forward=%d"%(duration, int(forward)))
+      set_motor_direction(forward)
+      motor_on()
+      wait(duration)
+   finally:
+      motor_off()
 
 def motor_on():
    GPIO.output(motor_pin, GPIO.HIGH)
@@ -201,6 +203,11 @@ if __name__ == "__main__":
                  logging.info("GUI has told us to start.")
                  info = commands.recv_pyobj()
                  do_time_lapse(info.frames, info.dt, info.dx, info.motorpulse, info.forward, pub, commands) 
+              if msg == "rewind":
+                 logging.info("GUI has told us to rewind.")
+                 info = commands.recv_pyobj()
+                 motor_pulse(info.rewind, not info.forward)
+
             
     finally:
        cleanup_gpio()

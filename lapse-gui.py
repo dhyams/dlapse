@@ -6,7 +6,6 @@ import remi.gui as gui
 import time
 import logging
 from info import Info
-from threading import Timer
 import threading
 
 
@@ -97,17 +96,25 @@ class TimeLapse(remi.App):
         self.info_railincr  = make_infoshow('Rail Increment (cm)')
         self.info_motorpulse  = make_infoshow('Motor Pulse (sec)')
 
-        # part of the rail to use
+        sub1 = gui.HBox(width='100%', height=50)
+        sub1.style['position'] = 'relative'
 
         # Start button
         self.bt_start = gui.Button('Start', width='100%', height=30, margin='10px')
         self.bt_start.set_on_click_listener(self.on_start, title)
-        main.append(self.bt_start)
+        sub1.append(self.bt_start)
 
-        # cancel button
+        # Cancel button
         self.bt_cancel = gui.Button('Cancel', width='100%', height=30, margin='10px')
         self.bt_cancel.set_on_click_listener(self.on_cancel, title)
-        main.append(self.bt_cancel)
+        sub1.append(self.bt_cancel)
+
+        # Rewind button
+        self.bt_rewind = gui.Button('Rewind(2)', width='100%', height=30, margin='10px')
+        self.bt_rewind.set_on_click_listener(self.on_rewind, title)
+        sub1.append(self.bt_rewind)
+
+        main.append(sub1)
 
         self.enable_gui()
         self.UpdateInfo() 
@@ -132,6 +139,7 @@ class TimeLapse(remi.App):
        
         self.bt_start.set_enabled(enabled)
         self.bt_cancel.set_enabled(not enabled)
+        self.bt_rewind.set_enabled(enabled)
         self.sp_length.set_enabled(enabled)
         self.sp_raildist.set_enabled(enabled)
         self.sp_framerate.set_enabled(enabled)
@@ -155,8 +163,17 @@ class TimeLapse(remi.App):
          
 
     def on_cancel(self, widget, title):
-        logging.info("Cancel clicked.")
         socket.send("cancel") 
+
+    def on_rewind(self, widget, title):
+        # pop a dialog to ask user how long to rewind.
+
+        info = self.GetInfo()
+
+        info.rewind = 2.0  # TODO FILL THIS IN
+
+        socket.send("rewind")
+        socket.send_pyobj(info)
         
     def on_timer(self):
         msg = ''
