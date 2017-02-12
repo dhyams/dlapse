@@ -1,4 +1,26 @@
+
 import scipy.optimize
+import os
+import psutil
+
+def create_pid_file(pid_file):
+    pid = os.getpid()
+    if os.path.exists(pid_file):
+       fp = open(pid_file, "r")
+       content = fp.read()
+       pid = int(content)
+       try:
+          p = psutil.Process(pid)
+          p.kill()
+       except:
+          pass
+
+    fp = open(pid_file, "w")
+    fp.write("%d"%pid)
+    fp.close()
+
+def cleanup_pid_file(pid_file):
+    os.remove(pid_file)
 
 
 def calibration(p):

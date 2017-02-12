@@ -5,7 +5,8 @@ import zmq
 import remi.gui as gui
 import time
 import logging
-from info import Info
+from lapse_util import Info
+import lapse_util as util
 import threading
 
 
@@ -15,6 +16,7 @@ import threading
 address = '192.168.1.7'
 port = 80
 log_filename = '/var/log/dlapse.log'
+pid_file = "/tmp/dlapse-gui.pid"
 ##############################################################
 
 
@@ -227,7 +229,7 @@ class TimeLapse(remi.App):
     #    print("x:%s  y:%s  no userdata"%(x, y))
 
 
-if __name__ == "__main__":
+def setup_logging():
     logging.basicConfig(filename=log_filename, level=logging.DEBUG)
     logging.getLogger().addHandler(logging.StreamHandler())
     formatter = logging.Formatter('%(asctime)s %(process)d %(levelname)s: %(message)s')
@@ -236,16 +238,19 @@ if __name__ == "__main__":
     logging.info("Start.")
 
 
+
+if __name__ == "__main__":
+
+    util.create_pid_file(pid_file)
+
+    setup_logging()
+
     global socket
     context = zmq.Context()
     socket = context.socket(zmq.PAIR)
     socket.connect("tcp://localhost:5556")
 
-    #global sub
-    #sub = context.socket(zmq.SUB)
-    #sub.connect("tcp://localhost:5557")
-
     try:
        remi.start(TimeLapse, address=address, port=port, multiple_instance=False, enable_file_cache=True, update_interval=1.0, start_browser=False)
     finally:
-       pass
+       util.cleanup_pid_file(pid_file)

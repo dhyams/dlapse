@@ -8,7 +8,15 @@ import logging
 import sched
 import scipy.optimize
 import subprocess
-from info import Info
+from lapse_util import Info
+import lapse_util as util
+
+# Prerequisities:
+#  remi (download and install with python setup.py)
+#  zeromq (pip install zmq)
+#  scipy  (apt-get install python-scipy)
+#  psutil (pip install psutil)
+
 
 # BUG: direction pin always high....short on HAT board? Answer: yes, it's bridged to 3.3V.
 # TODO: need a good way to kill GUI process if the master goes down.
@@ -37,6 +45,7 @@ focus_pin = 2
 ##############################################################
 # other setup
 log_filename="/var/log/dlapse-master.log"
+pid_file = "/tmp/lapse-master.pid"
 ##############################################################
 
 
@@ -177,7 +186,9 @@ def setup_logging():
     logging.info("Start.")
 
 
+
 if __name__ == "__main__":
+    util.create_pid_file(pid_file)
     setup_logging() 
     setup_gpio() 
 
@@ -213,3 +224,4 @@ if __name__ == "__main__":
             
     finally:
        cleanup_gpio()
+       util.cleanup_pid_file(pid_file)
