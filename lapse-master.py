@@ -50,12 +50,14 @@ pid_file = "/tmp/lapse-master.pid"
 
 
 
-def wait(duration):
+def wait(duration, log=False):
+   if log:
+      logging.info("Waiting %lf seconds."%duration)
    time.sleep(duration)
 
 def motor_pulse(duration, forward=True):
    try:
-      logging.info("Motor pulse %d, forward=%d"%(duration, int(forward)))
+      logging.info("Motor pulse %lf, forward=%d"%(duration, int(forward)))
       set_motor_direction(forward)
       motor_on()
       wait(duration)
@@ -116,36 +118,37 @@ def cleanup_gpio():
 
 
 
-def do_time_lapse(frames, dt, dx, pulselength, forward=True, socket=None):
-
-    logging.info("Starting Time Lapse")
-    logging.info("  Frames = %d"%frames)
-    logging.info("Dt = %lf"%dt)
-    logging.info("MotorPulse = %lf"%pulselength)
-    logging.info("Forward = %d"%forward)
+def do_time_lapse(info, socket=None):
+   
+    logging.info("=== Starting Time Lapse ===")
+    for attr in info.__dict__:
+       logging.info("  %s = %s"%(attr, getattr(info, attr, "None")))
 
     # PROBLEM: really, we need to do better here.
-    allowance = 0.1*dt # the camera shutter speed should always be less than this....
+    allowance = 0.1*info.dt # the camera shutter speed should always be less than this....
                        # because we don't have the user input it as info.
 
     DX = 0.0
-    for i in xrange(frames):
+    for i in xrange(info.frames):
   
+       msg = "Running: frame %d/%d, total movement %.1f mm"%(i+1, info.frames, DX)
+       logging.info(msg)
        if socket: 
-          msg = "Running: frame %d/%d, total movement %.1f mm"%(i+1, frames, DX)
           socket.send(msg)
 
-       DX += dx*10.0 # keep track of total movement in mm.
+       DX += info.dx*10.0 # keep track of total movement in mm.
 
        if i == 0: # the first picture is special; no movement needed for this one.
           take_picture()
           wait(allowance)
        else: 
-          motor_pulse(pulselength, forward)
+          motor_pulse(info.motorpulse, info.forward)
 
-          wait(dt-allowance)
+          wait(info.dt-allowance, log=True)
+
           take_picture() 
-          wait(allowance)
+
+          wait(allowance, log=True)
 
  
        # see if we have received a cancel, and if so, break out.
@@ -169,6 +172,7 @@ def check_jumpers():
        logging.info("Program pin state: %s"%str(s))
 
     if states[0] or states[1] or states[2]:
+       logging.info("Running program.")
        raildist = 100.0 if not states[2] else 200.0
        tlen = 60.0
        if states[0] and not states[1]:
@@ -177,9 +181,11 @@ def check_jumpers():
          tlen = 30.0
        elif states[0] and states[1]:
          tlen = 45.0
-       info = Info(tlen=tlen, framerate=30, cliplen=8.0, raildist=raildist, reverse=False)
 
-       do_time_lapse(info.frames, info.dt,  info.motorpulse, info.forward) 
+       info = Info(tlen=tlen, framerate=30, cliplen=8.0, raildist=raildist, reverse=False)
+  
+       do_time_lapse(info)
+
        return True
     
     return False
@@ -221,7 +227,7 @@ if __name__ == "__main__":
               if msg == "start":
                  logging.info("GUI has told us to start.")
                  info = socket.recv_pyobj()
-                 do_time_lapse(info.frames, info.dt, info.dx, info.motorpulse, info.forward, socket) 
+                 do_time_lapse(info, socket) 
 
               if msg == "rewind":
                  logging.info("GUI has told us to rewind.")
